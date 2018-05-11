@@ -248,16 +248,14 @@ where object_type_id = 1;
 select object_type_id as ot_id, name as ot_name, level
 from object_types
 start with object_type_id = 3
-connect by prior parent_id = object_type_id
-order by level desc;
+connect by prior parent_id = object_type_id;
 
 --4. получение вложенности объектов для заданного объекта(нужно получить иерархию вложенности)
 --(obj_id, obj_name, level)
 select object_id as obj_id, name as obj_name, level
 from objects
 start with object_id = 3
-connect by prior parent_id = object_id
-order by level desc;
+connect by prior parent_id = object_id;
 
 --5. получение объектов заданного объектного типа(учитывая только наследование от)
 --(ot_id, ot_name, obj_id, obj_name)
@@ -271,31 +269,37 @@ where object_type_id in (
 
 --6. получение значений всех атрибутов(всех возможных типов) для заданного объекта(без учета наследования от)
 --(attr_id, attr_name, value)
-select attr_id, attributes.name as attr_name, value, date_value, reference as ref_value from (
+select attr_id, attributes.name as attr_name, value from (
     select * from (
         --id атрибутов, которые могут быть у объектного типа заданного объекта
         select attr_id
         from objects
-        right join attr_binds using (object_type_id)
+        right join attr_binds 
+        using (object_type_id)
         where object_type_id = (
             select object_type_id 
             from objects
             where object_id = 3
         ) 
     )
-    full outer join ( 
+    left join ( 
         --id атрибутов и их значения из таблиц params и references для заданного объекта
         select attr_id, 
-               value, 
-               date_value, 
-               reference 
+            case
+                when value is null then to_char(date_value)
+                else value
+            end as value
         from params
-        full outer join references using (attr_id)
-        where params.object_id = 3 or references.object_id = 3
+        where params.object_id = 3
+        union
+        select attr_id, to_char(reference) as value
+        from references
+        where references.object_id = 3
     )
     using (attr_id)
 )
-join attributes using (attr_id);
+join attributes 
+using (attr_id);
  
 --7. получение ссылок на заданный объект(все объекты, которые ссылаются на текущий)
 --(ref_id, ref_name) нам нужны ссылки на объект(references.reference), а не объекты по ссылкам(references.object_id)
@@ -306,30 +310,36 @@ where object_id = 4;
 
 --8. получение значений всех атрибутов(всех возможных типов, без повторяющихся атрибутов) для заданного объекта
 --( с учетом наследования от) вывести в виде см. п.6 (attr_id, attr_name, value)
-select distinct attr_id, attributes.name as attr_name, value, date_value, reference as ref_value from (
+select distinct attr_id, attributes.name as attr_name, value from (
     select * from (
         --id атрибутов, которые могут быть у иерархии объектных типов заданного объекта
         select attr_id
         from objects
-        right join attr_binds using (object_type_id)
+        right join attr_binds 
+        using (object_type_id)
         where object_type_id in (
         --получение иерархии наследования объектных типов заданного объекта
             select object_type_id
             from object_types
             start with object_type_id = (select object_type_id from objects where object_id = 5)
             connect by prior parent_id = object_type_id
-        ) 
+        )  
     )
-    left join ( -- исключение повторяющихся 
+    left join ( -- исключение повторяющихся
         --id атрибутов и их значения из таблиц params и references для заданного объекта
         select attr_id, 
-               value, 
-               date_value, 
-               reference 
+            case
+                when value is null then to_char(date_value)
+                else value
+            end as value
         from params
-        full outer join references using (attr_id)
-        where params.object_id = 5 or references.object_id = 5
+        where params.object_id = 5
+        union
+        select attr_id, to_char(reference) as value
+        from references
+        where references.object_id = 5
     )
     using (attr_id)
 )
-join attributes using (attr_id);
+join attributes 
+using (attr_id);
